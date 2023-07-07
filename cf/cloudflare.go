@@ -2,8 +2,7 @@ package cf
 
 import (
 	"fmt"
-
-	"github.com/cloudflare/cloudflare-go"
+	"github.com/cloudflare-go"
 )
 
 type CloudflareAPI struct {
@@ -152,28 +151,6 @@ func deleteIPFromFilter(api *cloudflare.API, zoneID, host, ip string) error {
 
 			break
 		}
-	}
-
-	return nil
-}
-
-func (c *CloudflareAPI) AddIPToRules(ip string) error {
-	filters := cloudflare.Filters{
-		Match: "ip",
-		Value: ip,
-	}
-
-	rules := []cloudflare.Filter{
-		{
-			Expression: filters,
-			Action:     "allow",
-			Comment:    c.Comment,
-		},
-	}
-
-	err := c.API.CreateFirewallRules(c.ZoneID, rules)
-	if err != nil {
-		return err
 	}
 
 	return nil
