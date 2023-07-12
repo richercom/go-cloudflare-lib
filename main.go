@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -27,21 +26,28 @@ func convertIPv6ToCIDR(ipv6Address string, prefixLen int) string {
 	return fmt.Sprintf("%s/%d", ip.String(), prefixLen)
 }
 
-func ConvertIP(ipStr string) (string, error) {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return "", errors.New("")
+func ConvertIP(ipStr []string) (newIPs []string) {
+	if len(ipStr) < 1 {
+		return
 	}
-	if ip.To4() != nil {
-		return ip.String(), nil
+	for i, _ := range ipStr {
+		ip := net.ParseIP(ipStr[i])
+		if ip == nil {
+			fmt.Println("format ip err.", ip)
+			continue
+		}
+		if ip.To4() != nil {
+			newIPs = append(newIPs, ip.String())
+			continue
+		}
+		// v6 to cidr
+		cidr := convertIPv6ToCIDR(ip.String(), 64)
+		newIPs = append(newIPs, cidr)
 	}
-	// v6 to cidr
-	cidr := convertIPv6ToCIDR(ip.String(), 64)
-	return cidr, nil
-
+	return
 }
 
 func main() {
-	ipStr := "fe80::5448:a50a:f5d2:7892"
+	ipStr := []string{"fe80::5448:a50a:f5d2:7892", "120.0.0.7"}
 	fmt.Println(ConvertIP(ipStr))
 }

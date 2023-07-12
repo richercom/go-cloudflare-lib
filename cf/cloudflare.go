@@ -1,8 +1,10 @@
 package cf
 
 import (
+	"context"
 	"fmt"
 	"github.com/cloudflare-go"
+	"log"
 )
 
 type CloudflareAPI struct {
@@ -10,6 +12,7 @@ type CloudflareAPI struct {
 	ZoneID     string
 	Host       string
 	IPListName string
+	ZoneRe     *cloudflare.ResourceContainer
 }
 
 func NewCloudflareAPI(APIKey, zoneID, host, ipListName string) (*CloudflareAPI, error) {
@@ -23,88 +26,41 @@ func NewCloudflareAPI(APIKey, zoneID, host, ipListName string) (*CloudflareAPI, 
 		ZoneID:     zoneID,
 		Host:       host,
 		IPListName: ipListName,
+		ZoneRe:     cloudflare.ZoneIdentifier(zoneID),
 	}, nil
 }
 
-func (c *CloudflareAPI) AddIPToWhitelist(ip string) error {
-	err := c.API.CreateFirewallAccessRule(c.ZoneID, cloudflare.FirewallAccessRule{
-		Mode:  "whitelist",
-		Notes: c.IPListName,
-		Configuration: cloudflare.FirewallAccessRuleConfiguration{
-			Value:    ip,
-			Target:   "ip",
-			ZoneName: c.Host,
-		},
+// GetCustomHostname query Custom Hostnames info by name
+func (c *CloudflareAPI) GetCustomHostName(ctx context.Context, hostname string) (*cloudflare.CustomHostname, error) {
+	hostnames, _, err := c.API.CustomHostnames(ctx, c.ZoneID, 0, cloudflare.CustomHostname{Hostname: hostname})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(hostnames) == 0 {
+		return nil, nil // 未找到 Custom Hostname
+	}
+
+	return &hostnames[0], nil
+}
+
+// AddCustomHostname add Custom Hostname to enterprise host record
+func (c *CloudflareAPI) AddCustomHostname(ctx context.Context, hostname, origin string) error {
+	ret, err := c.API.CreateCustomHostname(ctx, c.ZoneID, cloudflare.CustomHostname{
+		Hostname:           hostname,
+		CustomOriginServer: origin,
 	})
 	if err != nil {
 		return err
 	}
+	fmt.Println("[AddCustomHostname] set success", ret)
 
 	return nil
 }
 
-func (c *CloudflareAPI) UpdateIPWhitelist(oldIP, newIP string) error {
-	rules, err := c.API.ListFirewallAccessRules(c.ZoneID, cloudflare.FirewallAccessRuleConfiguration{
-		Value:    oldIP,
-		Target:   "ip",
-		ZoneName: c.Host,
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, rule := range rules {
-		if rule.Notes == c.IPListName {
-			err := c.API.UpdateFirewallAccessRule(c.ZoneID, rule.ID, cloudflare.FirewallAccessRule{
-				Mode:  "whitelist",
-				Notes: c.IPListName,
-				Configuration: cloudflare.FirewallAccessRuleConfiguration{
-					Value:    newIP,
-					Target:   "ip",
-					ZoneName: c.Host,
-				},
-			})
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-
-	return fmt.Errorf("no matching whitelist rule found for IP %s", oldIP)
-}
-
-func (c *CloudflareAPI) RemoveIPFromWhitelist(ip string) error {
-	rules, err := c.API.ListFirewallAccessRules(c.ZoneID, cloudflare.FirewallAccessRuleConfiguration{
-		Value:    ip,
-		Target:   "ip",
-		ZoneName: c.Host,
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, rule := range rules {
-		if rule.Notes == c.IPListName {
-			err := c.API.DeleteFirewallAccessRule(c.ZoneID, rule.ID)
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-
-	return fmt.Errorf("no matching whitelist rule found for IP %s", ip)
-}
-
-// 添加 IP 到白名单
-func addIPToFilter(api *cloudflare.API, zoneID, host, ip string) error {
-	filter := cloudflare.Filter{
-		Expression: "ip.src eq " + ip,
-		Action:     "allow",
-	}
-
-	_, err := api.CreateFilter(zoneID, filter)
+// DeleteCustomHostname delete Custom Hostname to enterprise host record
+func (c *CloudflareAPI) DeleteCustomHostname(ctx context.Context, id string) error {
+	err := c.API.DeleteCustomHostname(ctx, c.ZoneID, id)
 	if err != nil {
 		return err
 	}
@@ -112,90 +68,36 @@ func addIPToFilter(api *cloudflare.API, zoneID, host, ip string) error {
 	return nil
 }
 
-// 修改白名单 IP
-func updateIPInFilter(api *cloudflare.API, zoneID, host, oldIP, newIP string) error {
-	filters, err := api.ListFilters(zoneID)
-	if err != nil {
-		return err
+func (c *CloudflareAPI) AddDNSRecord(ctx context.Context, domain, recordType, content string) error {
+	record := cloudflare.CreateDNSRecordParams{
+		Type:    recordType,
+		Name:    domain,
+		Content: content,
+		TTL:     1,
 	}
 
-	for _, filter := range filters {
-		if filter.Expression == "ip.src eq "+oldIP && filter.Action == "allow" {
-			filter.Expression = "ip.src eq " + newIP
-
-			err := api.UpdateFilter(zoneID, filter.ID, filter)
-			if err != nil {
-				return err
-			}
-
-			break
-		}
+	_, err := c.API.CreateDNSRecord(ctx, c.ZoneRe, record)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	return nil
 }
 
-// 删除白名单 IP
-func deleteIPFromFilter(api *cloudflare.API, zoneID, host, ip string) error {
-	filters, err := api.ListFilters(zoneID)
+func (c *CloudflareAPI) DeleteDNSRecord(ctx context.Context, recordID string) error {
+	err := c.API.DeleteDNSRecord(ctx, c.ZoneRe, recordID)
 	if err != nil {
-		return err
-	}
-
-	for _, filter := range filters {
-		if filter.Expression == "ip.src eq "+ip && filter.Action == "allow" {
-			err := api.DeleteFilter(zoneID, filter.ID)
-			if err != nil {
-				return err
-			}
-
-			break
-		}
+		log.Fatal(err)
 	}
 
 	return nil
 }
 
-func (c *CloudflareAPI) UpdateIPRules(ip string) error {
-	filters := cloudflare.Filters{
-		Match: "ip",
-		Value: ip,
-	}
-
-	rules := []cloudflare.Filter{
-		{
-			Expression: filters,
-			Action:     "allow",
-			Comment:    c.Comment,
-		},
-	}
-
-	err := c.API.UpdateFirewallRules(c.ZoneID, rules)
+func (c *CloudflareAPI) GetDNSRecords(ctx context.Context, domain string) ([]cloudflare.DNSRecord, error) {
+	records, _, err := c.API.ListDNSRecords(ctx, c.ZoneRe, cloudflare.ListDNSRecordsParams{Name: domain})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
-}
-
-func (c *CloudflareAPI) RemoveIPFromRules(ip string) error {
-	filters := cloudflare.Filters{
-		Match: "ip",
-		Value: ip,
-	}
-
-	rules := []cloudflare.Filter{
-		{
-			Expression: filters,
-			Action:     "allow",
-			Comment:    c.Comment,
-		},
-	}
-
-	err := c.API.DeleteFirewallRules(c.ZoneID, rules)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return records, nil
 }
