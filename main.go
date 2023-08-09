@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
+	"time"
 )
 
 func convertIPv6ToCIDRF(ipv6CIDR string) string {
@@ -48,6 +50,38 @@ func ConvertIP(ipStr []string) (newIPs []string) {
 }
 
 func main() {
+
+	domain := "www.example.com"
+	re := regexp.MustCompile(`[a-zA-Z0-9-]+\.([a-zA-Z]+)$`)
+	match := re.FindStringSubmatch(domain)
+	if len(match) > 1 {
+		suffix := match[0]
+		fmt.Println("Domain suffix:", suffix)
+	} else {
+		fmt.Println("Invalid domain format")
+	}
+
+	// 假设有两个时间戳 t1 和 t2
+	t1 := time.Unix(1630100000, 0) // 第一个时间戳
+	t2 := time.Unix(1630103000, 0) // 第二个时间戳
+	fmt.Println(t1, t2)
+
+	// 定义5分钟的时间间隔
+
+	fiveMinutes := time.Duration(5) * time.Minute
+
+	// 计算两个时间戳的差值
+	diff := t2.Sub(t1)
+	fmt.Println(diff)
+	fmt.Println("555:", fiveMinutes)
+
+	// 判断差值是否等于5分钟
+	if diff > fiveMinutes {
+		fmt.Println("两个时间戳相差 大于 5分钟")
+	} else {
+		fmt.Println("两个时间戳不超过5分钟")
+	}
+
 	ipStr := []string{"fe80::5448:a50a:f5d2:7892", "120.0.0.7"}
 	fmt.Println(ConvertIP(ipStr))
 }
